@@ -20,7 +20,9 @@ My Icons look like this: (depending on hard drives/partitions, Network, GPU)<br>
 At start you can choose:<br>
 <img width="481" height="569" alt="grafik" src="https://github.com/user-attachments/assets/2e35330b-75a3-4070-a4c2-10a11db5585d" />
 <br>
-
+<br>
+SmartTaskTool is a Windows-only utility designed to monitor various hardware parameters on your system. It tracks disk read/write activity, CPU usage, RAM usage, and GPU information (limited to Nvidia GPUs), including VRAM usage and GPU temperature. The tool also monitors network activity (download/upload rates) across all connected network adapters. The software updates its metrics once per second and displays them in the system tray with icons that indicate the status of your hardware (e.g., color-coded for disk activity).
+<br><br>
 
 Python (4 files, start main) or exe on hugginface.
 I use psutil, wmi and pynvml.
