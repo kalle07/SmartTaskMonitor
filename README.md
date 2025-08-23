@@ -45,7 +45,6 @@ Network start at 0.1kB/s up to GB/s<br>
 Mouse hover - You see a little more detail, but it is not updated<br>
 If you put in autostart, try to delay start 5 to 10sec<br>
 mause "right click" - EXIT or Restart<br>
-reetart dont work on exe (dont know why)<br>
 <br>
 
 <b>=> All at your own risk !!!</b>
