@@ -2,7 +2,7 @@
 Tray-Icons for Task-Bar: Drives, CPU, GPU, Network
 => only windows! (only Nvidia atm)
 
-exe file on huggingface:
+exe file on huggingface or right side -> "releases":
 https://huggingface.co/kalle07/SmartTaskTool
 
 * Read / Write - Detection on your Hard Drives<br>
@@ -24,9 +24,9 @@ At start you can choose:<br>
 SmartTaskTool is a Windows-only utility designed to monitor various hardware parameters on your system. It tracks disk read/write activity, CPU usage, RAM usage, and GPU information (limited to Nvidia GPUs), including VRAM usage and GPU temperature. The tool also monitors network activity (download/upload rates) across all connected network adapters. The software updates its metrics once per second and displays them in the system tray with icons that indicate the status of your hardware (e.g., color-coded for disk activity).
 <br><br>
 
-Python (4 files, start main) or exe on hugginface.
+Python (4 files, start main) or exe.
 I use psutil, wmi and pynvml.
-Iam not a coder so its a co-work of chatgpt and my brain ;)
+Iam not a coder so its a co-work of Ai and my brain ;)
 
 GPU should be work with multi GPUs if nvidia, AMD has no python lib for windows. 
 Network should be work with all connected network adapters (in tray-icon no name, but with mouse hover over you will see).
