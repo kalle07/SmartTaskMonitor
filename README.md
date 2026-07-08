@@ -1,4 +1,4 @@
-# SmartTaskTool
+# SmartTaskMonitor
 Tray-Icons for Task-Bar: Drives, CPU, GPU, Network
 => only windows! (Nvidia and AMD GPU)
 
