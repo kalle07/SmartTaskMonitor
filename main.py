@@ -1,3 +1,4 @@
+# main.py
 import wx
 import sys
 import threading
@@ -7,8 +8,53 @@ import os
 from gui import MainFrame
 from tray import start_tray_monitoring, shutdown_requested
 from hardware import detect_hardware
+import pythoncom
+import clr
 
-# main.py
+
+DLL_NAME = "LibreHardwareMonitorLib.dll"
+
+def get_dll_path() -> str:
+    """Resolves DLL path: checks next to executable first, then falls back to bundled _MEIPASS."""
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    external_path = os.path.join(base_dir, DLL_NAME)
+    if os.path.exists(external_path):
+        print(f"[INFO] Using external DLL: {external_path}")
+        return external_path
+
+    if hasattr(sys, '_MEIPASS'):
+        bundled_path = os.path.join(sys._MEIPASS, DLL_NAME)
+        if os.path.exists(bundled_path):
+            print(f"[INFO] Using bundled DLL: {bundled_path}")
+            return bundled_path
+
+    raise FileNotFoundError(f"{DLL_NAME} not found next to executable or in bundled resources.")
+
+
+def init_clr_and_com(dll_path: str) -> None:
+    """Initialize COM and .NET runtime exactly once on the main thread."""
+    pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+    try:
+        clr.AddReference(dll_path)
+        print("[INFO] CLR & COM initialized successfully.")
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize CLR/COM: {e}")
+        sys.exit(1)
+
+
+# Prozesspriorität direkt beim Start setzen
+if sys.platform == "win32":
+    import psutil
+    try:
+        p = psutil.Process(os.getpid())
+        p.nice(psutil.IDLE_PRIORITY_CLASS)
+    except Exception as e:
+        print(f"[WARN] Konnte Prozesspriorität nicht setzen: {e}")
+
 
 def start_gui_and_get_selection(hardware_info, result_queue):
     class App(wx.App):
@@ -52,20 +98,19 @@ def save_exe_dir_to_meipass():
 
 if __name__ == "__main__":
     try:
-        time.sleep(0.5)
-
-        # Schreibe das Startverzeichnis in den MEIPASS-Ordner
+        time.sleep(0.1)
         save_exe_dir_to_meipass()
+        
+        dll_path = get_dll_path()
+        init_clr_and_com(dll_path)
 
         print("[DEBUG] Starte hardware.py...")
-        hardware_info = detect_hardware()
+        # ✅ Pass dll_path to hardware module
+        hardware_info = detect_hardware(dll_path)
         print("[DEBUG] hardware.py exit...")
 
         result_queue = queue.Queue()
-
-        # GUI im MainThread starten!
         start_gui_and_get_selection(hardware_info, result_queue)
-
         print("[INFO] GUI beendet.")
 
         try:
@@ -85,31 +130,38 @@ if __name__ == "__main__":
             print("[INFO] Auswahl empfangen:", selected_components)
             time.sleep(1)
 
+            # ✅ Pass dll_path to tray module
             tray_thread = threading.Thread(
                 target=start_tray_monitoring,
-                args=(hardware_info, selected_components),
+                args=(hardware_info, selected_components, dll_path),
                 daemon=False
             )
             tray_thread.start()
 
-            # Haupt-Exit-Überwachung
             while not shutdown_requested.wait(timeout=0.1):
                 pass
 
             print("[INFO] Tray-Exit wurde erkannt – beende main.py.")
-            sys.exit(0)
+            if tray_thread.is_alive():
+                tray_thread.join(timeout=3.0)
 
+            pythoncom.CoUninitialize()
+            try:
+                import clr
+                clr.Cleanup()
+            except Exception:
+                pass
 
-            print("[INFO] Tray-Monitoring gestartet. GUI ist geschlossen.")
-            tray_thread.join()
+            time.sleep(0.5)
+            os._exit(0)  # ✅ Cleaner for IDE execution
+
         else:
-            print("[INFO] Programm wird beendet, da keine Auswahl getroffen wurde (GUI geschlossen).")
-            sys.exit(0)  # Sauber beenden, wenn kein Traymonitor starten soll
+            print("[INFO] Programm wird beendet, da keine Auswahl getroffen wurde.")
+            os._exit(0)
 
     except KeyboardInterrupt:
         print("[INFO] Manuell beendet.")
-        sys.exit(0)
+        os._exit(0)
     except Exception as e:
         print(f"[ERROR] Unerwarteter Fehler: {e}", file=sys.stderr)
-        sys.exit(1)
-
+        os._exit(1)

@@ -13,6 +13,7 @@ class MainFrame(wx.Frame):
         super().__init__(*args, **kwargs)
         self.hardware_info = hardware_info or {}
         self.result_queue = result_queue
+        self._submitted = False
 
         self.selected_components = {
             'cpu': True,
@@ -130,6 +131,9 @@ class MainFrame(wx.Frame):
                 self.checkboxes['drives'].append((dev, letter, checkbox))
 
     def submit_values(self):
+        if self._submitted:
+            return
+        self._submitted = True
         selected_components = {
             'cpu': False,
             'ram': False,
@@ -183,43 +187,7 @@ class MainFrame(wx.Frame):
             else:
                 self.checkboxes[category].append(checkbox)
 
-    def get_selected_components(self):
-        selected = {
-            'cpu': False,
-            'ram': False,
-            'gpu': False,
-            'network': False,
-            'drives': []
-        }
-
-        for category, checkboxes in self.checkboxes.items():
-            if category == 'drives':
-                # drives ist eine Liste von Tupeln: (dev, part, checkbox)
-                drive_map = self.hardware_info.get('drive_map', {})
-                selected_drives = []
-                for entry in self.checkboxes:
-                    if len(entry) == 3:
-                        category, checkbox, item = entry
-                        if category == "drives" and checkbox.GetValue():
-                            if ":" in item:
-                                dev, part = item.split(":", 1)
-                                selected_drives.append((dev.strip(), part.strip()))
-
-                selected['drives'] = selected_drives
-            else:
-                # normale checkbox listen
-                if any(checkbox.GetValue() for checkbox in checkboxes):
-                    selected[category] = True
-
-        # Hardwareinfos ergänzen
-        selected['cpu_info'] = self.hardware_info.get('cpu_info', {})
-        selected['ram_info'] = self.hardware_info.get('ram_info', {})
-        selected['gpu_info'] = self.hardware_info.get('gpu_info', [])
-        selected['network_adapters'] = self.hardware_info.get('network_adapters', [])
-        selected_components['drive_map'] = self.hardware_info.get('drive_map', {})
-
-        return selected
-
+    
     def on_close(self, event):
         print("[DEBUG] Fenster wird geschlossen")
 
@@ -242,11 +210,14 @@ class MainFrame(wx.Frame):
             }
             self.result_queue.put(selected_components)
 
-        self.Destroy()
+        # Let wx handle the frame destruction & main loop exit naturally
+        event.Skip()
+        #old
+        #self.Destroy()
 
-        app = wx.GetApp()
-        if app:
-            app.ExitMainLoop()
+        #app = wx.GetApp()
+        #if app:
+        #    app.ExitMainLoop()
 
 
 

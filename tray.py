@@ -19,6 +19,32 @@ import subprocess  # Importieren Sie subprocess
 import tempfile
 import shutil
 
+
+
+
+DLL_NAME = "LibreHardwareMonitorLib.dll"
+
+def get_dll_path() -> str:
+    """Resolves DLL path: checks next to executable first, then falls back to bundled _MEIPASS."""
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    external_path = os.path.join(base_dir, DLL_NAME)
+    if os.path.exists(external_path):
+        print(f"[INFO] Using external DLL: {external_path}")
+        return external_path
+
+    if hasattr(sys, '_MEIPASS'):
+        bundled_path = os.path.join(sys._MEIPASS, DLL_NAME)
+        if os.path.exists(bundled_path):
+            print(f"[INFO] Using bundled DLL: {bundled_path}")
+            return bundled_path
+
+    raise FileNotFoundError(f"{DLL_NAME} not found next to executable or in bundled resources.")
+
+
 icons = {}
 current_colors = {}
 last_colors = {}
@@ -35,16 +61,9 @@ COLOR_MAP = {
 }
 
 
-def managed_thread(target, *args, **kwargs):
-    """
-    Führt target(*args, **kwargs) in Schleife aus, bis shutdown_event gesetzt ist.
-    Ideal für Monitoring-Loops.
-    """
-    def wrapper():
-        while not shutdown_event.is_set():
-            target(*args, **kwargs)
-            time.sleep(2.1)  # oder individuell einstellbar
-    t = threading.Thread(target=wrapper, daemon=True)
+def start_monitor_thread(target, *args, **kwargs):
+    """Starts a daemon thread for a monitoring function that manages its own loop."""
+    t = threading.Thread(target=target, args=args, kwargs=kwargs, daemon=True)
     thread_refs.append(t)
     t.start()
 
@@ -53,36 +72,37 @@ thread_refs = []
 shutdown_requested = threading.Event() 
 
 
-def resource_path(relative_path):
-    try:
-        base_path = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))
-        full_path = os.path.join(base_path, relative_path)
-        if not os.path.exists(full_path) and hasattr(sys, 'frozen'):
-            raise FileNotFoundError  # Trigger fallback
-        return full_path
-    except (AttributeError, FileNotFoundError):
-        try:
-            import pkgutil
-            data = pkgutil.get_data(__name__, relative_path)
-            if data:
-                temp_dir = tempfile.gettempdir()
-                temp_file = os.path.join(temp_dir, os.path.basename(relative_path))
-                with open(temp_file, 'wb') as f:
-                    f.write(data)
-                return temp_file
-        except Exception as e:
-            print(f"[ERROR] Fallback-Resource-Pfad fehlgeschlagen: {e}")
+def get_resource_path(relative_path: str) -> str:
+    """Resolves resource paths for PyInstaller --onefile with fallback."""
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(os.path.dirname(__file__))
 
-    # Last resort: use relative path from package root
-    pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "your_package_name"))
-    fallback_path = os.path.join(pkg_root, relative_path)
-    if os.path.exists(fallback_path):
-        return fallback_path
+    path = os.path.join(base_path, relative_path)
+    if os.path.exists(path):
+        return path
 
-    raise FileNotFoundError(f"Resource '{relative_path}' not found in any path.")
+    # Fallback: Directory of the running executable
+    exe_dir = os.path.abspath(os.path.dirname(sys.executable))
+    path = os.path.join(exe_dir, relative_path)
+    if os.path.exists(path):
+        return path
+
+    # Fallback: Current working directory
+    path = os.path.abspath(relative_path)
+    if os.path.exists(path):
+        return path
+
+    raise FileNotFoundError(f"Resource '{relative_path}' not found in any search path.")
 
 
-font_path = resource_path("DePixelSchmal.otf")
+try:
+    font_path = get_resource_path("DePixelSchmal.otf")
+except FileNotFoundError as e:
+    print(f"[WARN] Font not found: {e}. Using fallback font.")
+    font_path = None
+    
 
 def round_to_nearest_five(value):
     return int(round(value / 5.0) * 5)
@@ -295,18 +315,30 @@ def _on_quit(icon_inst=None, item=None):
     # 1. Stop-Flag setzen und Threads sauber beenden
     shutdown_event.set()
     for t in thread_refs:
-        t.join(timeout=2.1)
+        if t.is_alive():
+            t.join(timeout=2.1)
     print("[INFO] Alle Threads beendet.")
 
     # 2. Tray-Icons stoppen
     stop_all_tray_icons()
     print("[INFO] Alle Trays beendet.")
-    # 3. pynvml sauber beenden
+    
+    # 3. NVIDIA NVML sauber beenden
     try:
         pynvml.nvmlShutdown()
     except Exception:
         pass
-    print("[INFO] Nvidia shut down.")    
+    print("[INFO] Nvidia shut down.")
+
+    # 4. Release CLR/Pythonnet to unload LHM DLL handles
+    try:
+        import clr
+        clr.Cleanup()
+    except Exception:
+        pass
+    print("[INFO] CLR released.")
+
+
     time.sleep(0.1)
     shutdown_requested.set()
 
@@ -382,6 +414,7 @@ def stop_all_tray_icons():
                 icon["icon"].stop()
         except Exception as e:
             print(f"[WARN] Icon-Stop fehlgeschlagen: {e}")
+    time.sleep(0.1) 
     for event in stop_events.values():
         event.set()
 
@@ -426,8 +459,8 @@ def update_net_icons(adapter_name, send_kb, recv_kb, selected_components):
             tooltip = tooltip[:127] # falls percpu=True (tooltips max128 zeichen)
             update_tray_tooltip(key, tooltip)
 
-    threading.Thread(target=update_icon, args=("SEND", send_kb), daemon=True).start()
-    threading.Thread(target=update_icon, args=("RECV", recv_kb), daemon=True).start()
+    update_icon("SEND", send_kb)
+    update_icon("RECV", recv_kb)
 
 
 def sort_selected_drives(drive_selections, device_map):
@@ -440,7 +473,7 @@ def sort_selected_drives(drive_selections, device_map):
     return sorted(drive_selections, key=lambda x: x[1].upper(), reverse=True)
 
 
-def start_drive_icons(hardware_info, stop_all_tray_icons, device_map, drive_selections):
+def start_drive_icons(hardware_info, device_map, drive_selections):
     print("Starting tray icons for selected drives...")
     menu = Menu(
         MenuItem("Restart", lambda icon_inst, item: _on_restart(icon_inst, item)),
@@ -473,19 +506,16 @@ def start_drive_icons(hardware_info, stop_all_tray_icons, device_map, drive_sele
         print(f"  {key}: {value}")
 
 
-def start_tray_monitoring(hardware_info, selected_components):
+def start_tray_monitoring(hardware_info: dict, selected_components: dict, dll_path: str) -> None:
+    """Starts background monitoring threads and system tray icons."""
     if not isinstance(selected_components, dict):
         raise ValueError("selected_components muss ein Dictionary sein")
 
     expected_keys = ['cpu', 'ram', 'gpu', 'network', 'drives']
-
-    # Check if all expected keys are present and have the correct type
     for key in expected_keys:
         if key not in selected_components:
             raise KeyError(f"selected_components fehlt: '{key}'")
-        
         value = selected_components[key]
-
         if key == 'drives':
             if not isinstance(value, list):
                 raise TypeError(f"'{key}' muss eine Liste sein.")
@@ -574,122 +604,289 @@ def start_tray_monitoring(hardware_info, selected_components):
         #icons[key]["icon"].title = tooltip
 
 
-    def update_gpu_vram_temp(idx, util, mem_used, mem_total, temp, max_temp):
+    gpu_info_list = hardware_info.get('gpu_info', [])
+    gpu_names = {i: gpu['name'] for i, gpu in enumerate(gpu_info_list)}
+
+
+    def update_gpu_sensor_data(gpu_idx, gpu_name, util, mem_used, mem_total, temp, max_temp):
+        """Unified GPU sensor updater for both NVIDIA and AMD."""
         if not selected_components['gpu']:
             return
 
+        gpu_key = str(gpu_idx)
+        # Consistent labels: GPU0, VR0, T0, etc.
+        label_temp = f"T{gpu_key}"
+        label_vram = f"VR{gpu_key}"
+        label_gpu = f"GPU{gpu_key}"
+
+        # Icon registry keys
+        key_temp = f"GPU_{gpu_key}_TEMP"
+        key_vram = f"GPU_{gpu_key}_VRAM"
+        key_gpu = f"GPU_{gpu_key}_LOAD"
+
         # === Temperatur ===
-        key_temp = f"GPU{idx}_TEMP"
-        label_temp = f"T{idx}"
         temp_rounded = round(temp)
-        # Temperatur in Prozent (dynamisch zu max_temp)
-        clamped = max(35, min(temp, max_temp))  # untere Grenze: 35°C
-        pct = round((clamped - 35) / (max_temp - 35) * 100)
+        clamped = max(30, min(temp, max_temp))
+        pct = round((clamped - 30) / (max_temp - 30) * 100) if max_temp > 30 else 0
         image_temp = create_bar_icon(pct, label_temp)
-        
+
         if key_temp not in icons:
             try:
                 icon = Icon(key_temp, image_temp, menu=menu)
                 icons[key_temp] = {"icon": icon, "label": label_temp}
-                print(f"Created GPU{idx} temperature icon.")
+                print(f"Created GPU temp icon for {gpu_key}")
                 threading.Thread(target=icon.run, daemon=True).start()
             except Exception as e:
-                print(f"Error creating GPU{idx} temperature icon: {e}")
+                print(f"Error creating GPU temp icon: {e}")
         else:
             icons[key_temp]["icon"].icon = image_temp
 
-
-        tooltip = f"{label_temp}: {temp_rounded} °C / {max_temp} °C"
-        tooltip = tooltip[:127]
-        update_tray_tooltip(key_temp, tooltip)
-        #icons[key_temp]["icon"].title = f"{label_temp}: {temp_rounded} °C / {max_temp} °C"
+        # Tooltip: Full GPU name + metric
+        tooltip_temp = f"{gpu_name}\n{label_temp}: {temp_rounded} °C / {max_temp} °C"
+        update_tray_tooltip(key_temp, tooltip_temp[:127])
         time.sleep(0.01)
 
-
-        # === VRAM-Nutzung ===
-        key_vram = f"VRAM{idx}_USAGE"
-        label_vram = f"VR{idx}"
-        vram_util = round_to_nearest_five(mem_used / mem_total * 100)
+        # === VRAM ===
+        vram_util = round_to_nearest_five(mem_used / mem_total * 100) if mem_total > 0 else 0
         image_vram = create_bar_icon(vram_util, label_vram)
 
         if key_vram not in icons:
             try:
                 icon = Icon(key_vram, image_vram, menu=menu)
                 icons[key_vram] = {"icon": icon, "label": label_vram}
-                print(f"Created VRAM{idx} usage icon.")
+                print(f"Created GPU VRAM icon for {gpu_key}")
                 threading.Thread(target=icon.run, daemon=True).start()
             except Exception as e:
-                print(f"Error creating VRAM{idx} usage icon: {e}")
+                print(f"Error creating GPU VRAM icon: {e}")
         else:
             icons[key_vram]["icon"].icon = image_vram
 
         used_gb = round(mem_used / (1024**3))
         total_gb = round(mem_total / (1024**3))
-        # Set tooltip using the update_tray_tooltip function
-        tooltip = f"{label_vram}: {used_gb}/{total_gb} GB"
-        tooltip = tooltip[:127]
-        update_tray_tooltip(key_vram, tooltip)
-
-        #icons[key_vram]["icon"].title = f"{label_vram}: {used_gb}/{total_gb} GB"
+        tooltip_vram = f"{gpu_name}\n{label_vram}: {used_gb}/{total_gb} GB"
+        update_tray_tooltip(key_vram, tooltip_vram[:127])
         time.sleep(0.01)
 
-
-        # === GPU-Nutzung ===
-        key_gpu = f"GPU{idx}_USAGE"
-        label_gpu = f"GPU{idx}"
-        image_gpu = create_bar_icon(util, label_gpu)
+        # === Load ===
+        image_gpu = create_bar_icon(round(util), label_gpu)
 
         if key_gpu not in icons:
             try:
                 icon = Icon(key_gpu, image_gpu, menu=menu)
                 icons[key_gpu] = {"icon": icon, "label": label_gpu}
-                print(f"Created GPU{idx} usage icon.")
+                print(f"Created GPU load icon for {gpu_key}")
                 threading.Thread(target=icon.run, daemon=True).start()
             except Exception as e:
-                print(f"Error creating GPU{idx} usage icon: {e}")
+                print(f"Error creating GPU load icon: {e}")
         else:
             icons[key_gpu]["icon"].icon = image_gpu
-            #icons[key_gpu]["icon"].title = f"{label_gpu}: {util}%"
 
-       # Set tooltip using the update_tray_tooltip function
-        tooltip = f"{label_gpu}: {util}%"
-        tooltip = tooltip[:127]
-        update_tray_tooltip(key_gpu, tooltip)
+        tooltip_gpu = f"{gpu_name}\n{label_gpu}: {round(util)}%"
+        update_tray_tooltip(key_gpu, tooltip_gpu[:127])
+
+
+    def update_amd_gpu_sensor_data(gpu_idx: int, gpu_name: str, util: float, mem_used_mb: float, mem_total_mb: float, temp: float, max_temp: float) -> None:
+        """AMD-specific sensor updater. Explicitly handles MB-to-GB conversion."""
+        if not selected_components['gpu']:
+            return
+
+        gpu_key = str(gpu_idx)
+        label_temp = f"T{gpu_key}"
+        label_vram = f"VR{gpu_key}"
+        label_gpu = f"GPU{gpu_key}"
+
+        key_temp = f"GPU_{gpu_key}_TEMP"
+        key_vram = f"GPU_{gpu_key}_VRAM"
+        key_gpu = f"GPU_{gpu_key}_LOAD"
+
+        # === Temperatur ===
+        temp_rounded = round(temp)
+        clamped = max(30, min(temp, max_temp))
+        pct = round((clamped - 30) / (max_temp - 30) * 100) if max_temp > 30 else 0
+        image_temp = create_bar_icon(pct, label_temp)
+
+        if key_temp not in icons:
+            try:
+                icon = Icon(key_temp, image_temp, menu=menu)
+                icons[key_temp] = {"icon": icon, "label": label_temp}
+                print(f"[INFO] Created AMD GPU temp icon for {gpu_key}")
+                threading.Thread(target=icon.run, daemon=True).start()
+            except Exception as e:
+                print(f"[WARN] Error creating AMD GPU temp icon: {e}")
+        else:
+            icons[key_temp]["icon"].icon = image_temp
+
+        tooltip_temp = f"{gpu_name}\n{label_temp}: {temp_rounded} °C / {max_temp} °C"
+        update_tray_tooltip(key_temp, tooltip_temp[:127])
+        time.sleep(0.01)
+
+        # === VRAM ===
+        # LibreHardwareMonitor reports memory in MB. Convert to GB.
+        mem_used_gb = mem_used_mb / 1024.0
+        mem_total_gb = mem_total_mb / 1024.0
+        vram_util = round_to_nearest_five(mem_used_gb / mem_total_gb * 100) if mem_total_gb > 0 else 0
+        image_vram = create_bar_icon(vram_util, label_vram)
+
+        if key_vram not in icons:
+            try:
+                icon = Icon(key_vram, image_vram, menu=menu)
+                icons[key_vram] = {"icon": icon, "label": label_vram}
+                print(f"[INFO] Created AMD GPU VRAM icon for {gpu_key}")
+                threading.Thread(target=icon.run, daemon=True).start()
+            except Exception as e:
+                print(f"[WARN] Error creating AMD GPU VRAM icon: {e}")
+        else:
+            icons[key_vram]["icon"].icon = image_vram
+
+        used_gb = round(mem_used_gb)
+        total_gb = round(mem_total_gb)
+        tooltip_vram = f"{gpu_name}\n{label_vram}: {used_gb}/{total_gb} GB"
+        update_tray_tooltip(key_vram, tooltip_vram[:127])
+        time.sleep(0.01)
+
+        # === Load ===
+        image_gpu = create_bar_icon(round(util), label_gpu)
+
+        if key_gpu not in icons:
+            try:
+                icon = Icon(key_gpu, image_gpu, menu=menu)
+                icons[key_gpu] = {"icon": icon, "label": label_gpu}
+                print(f"[INFO] Created AMD GPU load icon for {gpu_key}")
+                threading.Thread(target=icon.run, daemon=True).start()
+            except Exception as e:
+                print(f"[WARN] Error creating AMD GPU load icon: {e}")
+        else:
+            icons[key_gpu]["icon"].icon = image_gpu
+
+        tooltip_gpu = f"{gpu_name}\n{label_gpu}: {round(util)}%"
+        update_tray_tooltip(key_gpu, tooltip_gpu[:127])
+
 
 
     def gpu_monitor():
+        """NVIDIA monitoring loop with safe init & early exit."""
         try:
             pynvml.nvmlInit()
-            gpu_data = []
+        except pynvml.NVMLError as e:
+            print(f"[WARN] NVML not available. NVIDIA monitoring skipped.")
+            return
+        except Exception as e:
+            print(f"[WARN] NVML init failed: {e}")
+            return
 
+        nvidia_data = []
+        try:
             for idx in range(pynvml.nvmlDeviceGetCount()):
                 handle = pynvml.nvmlDeviceGetHandleByIndex(idx)
                 try:
-                    max_temp = pynvml.nvmlDeviceGetTemperatureThreshold(
-                        handle, pynvml.NVML_TEMPERATURE_THRESHOLD_GPU_MAX
-                    )
+                    max_temp = pynvml.nvmlDeviceGetTemperatureThreshold(handle, pynvml.NVML_TEMPERATURE_THRESHOLD_GPU_MAX)
                 except pynvml.NVMLError:
-                    max_temp = 90  # Fallback
+                    max_temp = 90
+                nvidia_data.append((idx, handle, max_temp))
+        except pynvml.NVMLError as e:
+            print(f"[WARN] Failed to fetch NVIDIA GPU data: {e}")
+            pynvml.nvmlShutdown()
+            return
 
-                gpu_data.append((idx, handle, max_temp))
+        if not nvidia_data:
+            print("[INFO] NVIDIA monitoring skipped: No NVIDIA GPUs found.")
+            pynvml.nvmlShutdown()
+            return
 
+        try:
             while not shutdown_event.is_set():
-            #while True:
-                for idx, handle, max_temp in gpu_data:
+                for idx, handle, max_temp in nvidia_data:
                     try:
                         util = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
                         mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
                         temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-
-                        update_gpu_vram_temp(idx, util, mem.used, mem.total, temp, max_temp)
-
+                        gpu_name = gpu_names.get(idx, f"GPU {idx}")
+                        update_gpu_sensor_data(idx, gpu_name, util, mem.used, mem.total, temp, max_temp)
                     except pynvml.NVMLError as e:
-                        print(f"[ERROR] GPU{idx} Fehler: {e}")
+                        print(f"[WARN] GPU{idx} sensor error: {e}")
+                    time.sleep(0.05)
+                time.sleep(0.4)
+        finally:
+            try:
+                pynvml.nvmlShutdown()
+            except Exception:
+                pass          
 
+
+
+    def amd_gpu_monitor():
+        """AMD monitoring loop with safe clr/DLL handling & early exit."""
+        hw = None  # Prevent UnboundLocalError in finally
+        try:
+            # ✅ DLL path is already resolved & CLR loaded in main.py
+            from LibreHardwareMonitor import Hardware as LHM_Hardware
+
+            hw = LHM_Hardware.Computer()
+            hw.IsGpuEnabled = True
+            hw.IsCpuEnabled = False
+            hw.IsMemoryEnabled = False
+            hw.IsMotherboardEnabled = False
+            hw.IsStorageEnabled = False
+            hw.IsNetworkEnabled = False
+            hw.IsControllerEnabled = False
+            hw.Open()
+
+            amd_hws = []
+            for hardware in hw.Hardware:
+                if "Amd" in hardware.HardwareType.ToString():
+                    idx = next((i for i, name in gpu_names.items() if name == hardware.Name), None)
+                    if idx is not None:
+                        amd_hws.append((idx, hardware))
+
+            if not amd_hws:
+                print("[INFO] AMD monitoring skipped: No AMD GPUs found.")
+                hw.Close()
+                return
+
+            while not shutdown_event.is_set():
+                for idx, hardware in amd_hws:
+                    hardware.Update()
+                    temp = None
+                    load = None
+                    mem_used = None
+                    mem_total = None
+                    
+                    for sensor in hardware.Sensors:
+                        s_name = sensor.Name.lower()
+                        s_type = sensor.SensorType.ToString()
+                        val = sensor.Value
+                        if s_type == "Temperature" and "core" in s_name:
+                            temp = val
+                        elif s_type == "Load" and ("core" in s_name or "gpu" in s_name):
+                            load = val
+                        elif "GPU Memory Used" in s_name:
+                            mem_used = val
+                        elif "GPU Memory Total" in s_name:
+                            mem_total = val
+
+                    if selected_components['gpu'] and temp is not None:
+                        update_amd_gpu_sensor_data(
+                            idx, gpu_names[idx],
+                            load or 0.0,
+                            mem_used or 0.0,
+                            mem_total or 0.0,
+                            temp or 0.0,
+                            100.0  # Fallback max_temp for AMD
+                        )
+                        time.sleep(0.01)
                 time.sleep(0.5)
+        except ImportError:
+            print("[WARN] pythonnet not installed. AMD monitoring skipped.")
+        except Exception as e:
+            print(f"[WARN] AMD monitoring failed: {e}")
+        finally:
+            if hw is not None:
+                try:
+                    hw.Close()
+                except Exception:
+                    pass
 
-        except pynvml.NVMLError as e:
-            print(f"[ERROR] NVML Initialisierung fehlgeschlagen: {e}")
+
 
 
 
@@ -712,7 +909,7 @@ def start_tray_monitoring(hardware_info, selected_components):
 
     def wmi_monitor(poll_interval=2):
         # if polinterval change -> set MB/s and kb/s
-        pythoncom.CoInitialize()
+        pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
         c = wmi.WMI(namespace="root\\CIMV2")
         prev_disk_counters = {}
         prev_net_stats = {}
@@ -748,8 +945,8 @@ def start_tray_monitoring(hardware_info, selected_components):
                         write_diff = max(0, write_bytes - prev_write)
                         prev_disk_counters[part] = (read_bytes, write_bytes)
 
-                        mb_read = read_diff / 1024 / 1024 / 2
-                        mb_write = write_diff / 1024 / 1024 / 2
+                        mb_read = read_diff / 1024 / 1024 / 1
+                        mb_write = write_diff / 1024 / 1024 / 1
 
                         key = f"{dev}_{part}"
                         color = get_color(mb_read > 2.0, mb_write > 2.0, mb_read, mb_write)
@@ -784,8 +981,8 @@ def start_tray_monitoring(hardware_info, selected_components):
                         prev_net_stats[adapter_name] = (send_raw, recv_raw)
 
                         # Convert bytes to KB
-                        send_kb = send_diff / 1024 / 2
-                        recv_kb = recv_diff / 1024 / 2
+                        send_kb = send_diff / 1024 / 1
+                        recv_kb = recv_diff / 1024 / 1
 
                         #print(f"Converted Network Data - Send: {send_kb} KB/s, Recv: {recv_kb} KB/s")
 
@@ -801,28 +998,38 @@ def start_tray_monitoring(hardware_info, selected_components):
             pythoncom.CoUninitialize()
 
 
+    # The timer is absolutely essential for determining the order in which the icons are created on the taskbar.
+
+    # ✅ Check availability flags BEFORE starting threads
+    nvidia_available = hardware_info.get('_nvidia_available', False)
+    amd_available = hardware_info.get('_amd_available', False)
 
     if selected_components['cpu']:
-        managed_thread(cpu_monitor)
+        start_monitor_thread(cpu_monitor)
         time.sleep(0.3)
 
     if selected_components['ram']:
-        managed_thread(ram_monitor)
+        start_monitor_thread(ram_monitor)
         time.sleep(0.3)
         
-    if selected_components['gpu']:
-        managed_thread(gpu_monitor)
+    if selected_components['gpu'] and nvidia_available:
+        start_monitor_thread(gpu_monitor)
+        time.sleep(0.3)
+
+    if selected_components['gpu'] and amd_available:
+        start_monitor_thread(amd_gpu_monitor)
         time.sleep(0.3)
 
     if selected_components['network']:
-        managed_thread(wmi_monitor)
+        start_monitor_thread(wmi_monitor)
         time.sleep(2)
 
     # Start tray icons for drives based on user selection
     if selected_components['drives']:
         device_map = hardware_info.get('drive_map', {})
         drive_selections = selected_components['drives']
-        start_drive_icons(hardware_info, stop_all_tray_icons, device_map, drive_selections)
+        time.sleep(0.3)
+        start_drive_icons(hardware_info, device_map, drive_selections)
 
 
     print("All tray monitoring components started.")
