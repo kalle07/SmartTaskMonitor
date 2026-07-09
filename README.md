@@ -1,6 +1,7 @@
 # SmartTaskMonitor
 Tray-Icons for Task-Bar: Drives, CPU, GPU, Network
-=> only windows! (Nvidia and AMD GPU)
+=> AMD need admin rights (If necessary, right-click, select ‘Properties’, then ‘Attributes’, and tick ‘Allow DLL’)<br>
+=> only windows! (Nvidia and AMD GPU)<br>
 
 exe file on huggingface or right side -> "releases":
 https://huggingface.co/kalle07/SmartTaskTool
