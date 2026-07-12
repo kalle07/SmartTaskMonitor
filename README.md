@@ -40,7 +40,6 @@ On start you will see a GUI, you have 10 secons to choose hardware.
 
 Further work:
 * Iam on it to implement to save a config-file for reuse 
-* Iam on implement save cfg file for next start
 <br>
 
 Hints:<br>
