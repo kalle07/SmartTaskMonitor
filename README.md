@@ -40,7 +40,7 @@ On start you will see a GUI, you have 10 secons to choose hardware.
 
 Further work:
 * Iam on it to implement to save a config-file for reuse 
-* Iam on implement AMD GPU (need help with librehardware, I have all I need only how looks like the list, would be nice if you can help)
+* Iam on implement save cfg file for next start
 <br>
 
 Hints:<br>
