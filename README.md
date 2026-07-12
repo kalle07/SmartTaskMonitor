@@ -1,5 +1,5 @@
 # SmartTaskMonitor
-Tray-Icons for Task-Bar: Drives, CPU, GPU, Network<br>
+<b>Tray-Icons for Task-Bar: Drives, CPU, GPU, Network</b><br>
 => AMD need admin rights (If necessary, right-click on DLL, select ‘Properties’, then ‘Attributes’, and tick ‘Allow DLL’)<br>
 - You can try keeping the external DLL, renaming it or deleting it; the internal DLL would then be used.<br>
 <br>
