@@ -3,9 +3,9 @@ Tray-Icons for Task-Bar: Drives, CPU, GPU, Network<br>
 => AMD need admin rights (If necessary, right-click on DLL, select ‘Properties’, then ‘Attributes’, and tick ‘Allow DLL’)<br>
 - You can try keeping the external DLL, renaming it or deleting it; the internal DLL would then be used.<br>
 <br>
-=> only Windows! (Nvidia and AMD GPU)<br>
+=> only Windows! (Nvidia and AMD GPU)<br><br>
 
-exe file on huggingface or right side -> "releases" you need DLL for AMD:
+exe file on huggingface or right side -> "releases" you need DLL for AMD:<br>
 https://huggingface.co/kalle07/SmartTaskTool
 
 * Read / Write - Detection on your Hard Drives(Partitions)<br>
