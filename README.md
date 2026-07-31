@@ -6,7 +6,7 @@
 => only Windows! (Nvidia and AMD GPU)<br><br>
 
 exe file on huggingface or right side -> "releases" you need DLL for AMD:<br>
-https://huggingface.co/kalle07/SmartTaskTool
+https://huggingface.co/kalle07/SmartTaskMonitor
 
 * Read / Write - Detection on your Hard Drives(Partitions)<br>
 * CPU - Usage<br>
@@ -48,5 +48,10 @@ red - writing | green - reading | yellow - <read/write><br>
 Network start at 0.1kB/s up to GB/s<br>
 If you put in autostart, try to delay start 5 to 10sec<br>
 <br>
+<br>
 
+
+**Latest release (V1)** – [SmartTaskMonitor_by_Sevenof9_v3_alpha.exe](https://github.com/kalle07/SmartTaskMonitor/releases/download/pre-relase_alpha3/SmartTaskMonitor_by_Sevenof9_v3_alpha.exe)  
+[![GitHub Downloads (latest)](https://img.shields.io/github/downloads/kalle07/SmartTaskMonitor/latest?label=latest%20release%20downloads&color=green)](https://github.com/kalle07/SmartTaskMonitor/releases/latest)
+<br>
 <b>=> All at your own risk !!!</b>
