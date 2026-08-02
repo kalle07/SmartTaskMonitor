@@ -1,0 +1,63 @@
+name: Update Download Counter
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Runs every 6 hours (adjust as needed)
+  workflow_dispatch:       # Allows manual trigger from Actions tab
+
+jobs:
+  update-counter:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find Asset ID & Get Download Count
+        id: get_count
+        run: |
+          # Dynamically find the asset ID by exact filename across all releases
+          ASSET_ID=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" \
+            | jq -r '.[].assets[] | select(.name == "SmartTaskMonitor_by_Sevenof9_v3_alpha.exe") | .id' | head -n 1)
+
+          if [ -z "$ASSET_ID" ]; then
+            echo "::warning::Asset not found. Check filename in README or releases."
+            exit 0
+          fi
+
+          # Fetch download count from GitHub API
+          DOWNLOAD_COUNT=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID" \
+            | jq -r '.download_count')
+
+          if [ "$DOWNLOAD_COUNT" == "null" ] || [ -z "$DOWNLOAD_COUNT" ]; then
+            echo "::warning::Download count returned null. GitHub may still be processing."
+            exit 0
+          fi
+
+          echo "count=$DOWNLOAD_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Update README.md
+        run: |
+          COUNT="${{ steps.get_count.outputs.count }}"
+          
+          # Check if placeholder exists before replacing
+          if grep -q "{{DOWNLOAD_COUNT}}" README.md; then
+            sed -i "s/{{DOWNLOAD_COUNT}}/$COUNT/g" README.md
+            echo "✅ Updated README.md with count: $COUNT"
+          else
+            echo "⚠️ Placeholder {{DOWNLOAD_COUNT}} not found in README.md. Skipping commit."
+            exit 0
+          fi
+
+      - name: Commit & Push if Changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add README.md
+          git diff --quiet && echo "📦 No changes to commit" || (
+            git commit -m "docs: update download counter to ${{ steps.get_count.outputs.count }}"
+            git push origin HEAD:${{ github.ref_name }}
+            echo "✅ Successfully pushed updated README.md"
+          )
