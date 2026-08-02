@@ -1,143 +1,63 @@
-import pygame
-import random
-import sys
-from typing import List, Tuple
+name: Update Download Counter
 
-# --- Constants ---
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
-GRID_SIZE = 20
-GRID_WIDTH = SCREEN_WIDTH // GRID_SIZE
-GRID_HEIGHT = SCREEN_HEIGHT // GRID_SIZE
-TARGET_FPS = 10
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Runs every 6 hours (adjust as needed)
+  workflow_dispatch:       # Allows manual trigger from Actions tab
 
-# Colors
-BG_COLOR = (20, 20, 20)
-SNAKE_HEAD = (0, 255, 0)
-SNAKE_BODY = (0, 200, 0)
-FOOD_COLOR = (255, 50, 50)
-TEXT_COLOR = (255, 255, 255)
+jobs:
+  update-counter:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-# Direction vectors
-UP = (0, -1)
-DOWN = (0, 1)
-LEFT = (-1, 0)
-RIGHT = (1, 0)
+      - name: Find Asset ID & Get Download Count
+        id: get_count
+        run: |
+          # Dynamically find the asset ID by exact filename across all releases
+          ASSET_ID=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" \
+            | jq -r '.[].assets[] | select(.name == "SmartTaskMonitor_by_Sevenof9_v3_alpha.exe") | .id' | head -n 1)
 
+          if [ -z "$ASSET_ID" ]; then
+            echo "::warning::Asset not found. Check filename in README or releases."
+            exit 0
+          fi
 
-class SnakeGame:
-    """A classic Snake game implementation using Pygame."""
+          # Fetch download count from GitHub API
+          DOWNLOAD_COUNT=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID" \
+            | jq -r '.download_count')
 
-    def __init__(self) -> None:
-        pygame.init()
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Snake")
-        self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont("arial", 24)
-        self.reset_game()
+          if [ "$DOWNLOAD_COUNT" == "null" ] || [ -z "$DOWNLOAD_COUNT" ]; then
+            echo "::warning::Download count returned null. GitHub may still be processing."
+            exit 0
+          fi
 
-    def reset_game(self) -> None:
-        """Initialize or reset the game state."""
-        self.snake: List[Tuple[int, int]] = [(GRID_WIDTH // 2, GRID_HEIGHT // 2)]
-        self.direction = RIGHT
-        self.next_direction = RIGHT  # Buffer to prevent rapid 180° turns
-        self.food = self._place_food()
-        self.score = 0
-        self.game_over = False
+          echo "count=$DOWNLOAD_COUNT" >> $GITHUB_OUTPUT
 
-    def _place_food(self) -> Tuple[int, int]:
-        """Randomly place food, ensuring it doesn't overlap with the snake."""
-        while True:
-            pos = (random.randint(0, GRID_WIDTH - 1), random.randint(0, GRID_HEIGHT - 1))
-            if pos not in self.snake:
-                return pos
+      - name: Update README.md
+        run: |
+          COUNT="${{ steps.get_count.outputs.count }}"
+          
+          # Check if placeholder exists before replacing
+          if grep -q "{{DOWNLOAD_COUNT}}" README.md; then
+            sed -i "s/{{DOWNLOAD_COUNT}}/$COUNT/g" README.md
+            echo "✅ Updated README.md with count: $COUNT"
+          else
+            echo "⚠️ Placeholder {{DOWNLOAD_COUNT}} not found in README.md. Skipping commit."
+            exit 0
+          fi
 
-    def handle_events(self) -> None:
-        """Process input events and update direction buffer."""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            elif event.type == pygame.KEYDOWN:
-                if self.game_over:
-                    if event.key == pygame.K_SPACE:
-                        self.reset_game()
-                else:
-                    if event.key == pygame.K_UP and self.direction != DOWN:
-                        self.next_direction = UP
-                    elif event.key == pygame.K_DOWN and self.direction != UP:
-                        self.next_direction = DOWN
-                    elif event.key == pygame.K_LEFT and self.direction != RIGHT:
-                        self.next_direction = LEFT
-                    elif event.key == pygame.K_RIGHT and self.direction != LEFT:
-                        self.next_direction = RIGHT
-
-    def update(self) -> None:
-        """Update game logic: movement, collisions, and scoring."""
-        if self.game_over:
-            return
-
-        # Apply buffered direction once per frame
-        self.direction = self.next_direction
-
-        head = self.snake[0]
-        new_head = (head[0] + self.direction[0], head[1] + self.direction[1])
-
-        # Wall collision
-        if not (0 <= new_head[0] < GRID_WIDTH and 0 <= new_head[1] < GRID_HEIGHT):
-            self.game_over = True
-            return
-
-        # Self collision
-        if new_head in self.snake:
-            self.game_over = True
-            return
-
-        self.snake.insert(0, new_head)
-
-        # Food collision
-        if new_head == self.food:
-            self.score += 1
-            self.food = self._place_food()
-        else:
-            self.snake.pop()
-
-    def draw(self) -> None:
-        """Render all game elements to the screen."""
-        self.screen.fill(BG_COLOR)
-
-        # Draw snake
-        for i, segment in enumerate(self.snake):
-            color = SNAKE_HEAD if i == 0 else SNAKE_BODY
-            rect = (segment[0] * GRID_SIZE, segment[1] * GRID_SIZE, GRID_SIZE, GRID_SIZE)
-            pygame.draw.rect(self.screen, color, rect)
-
-        # Draw food
-        food_rect = (self.food[0] * GRID_SIZE, self.food[1] * GRID_SIZE, GRID_SIZE, GRID_SIZE)
-        pygame.draw.rect(self.screen, FOOD_COLOR, food_rect)
-
-        # Draw score
-        score_surf = self.font.render(f"Score: {self.score}", True, TEXT_COLOR)
-        self.screen.blit(score_surf, (10, 10))
-
-        # Draw game over screen
-        if self.game_over:
-            go_surf = self.font.render("Game Over! Press SPACE to restart", True, TEXT_COLOR)
-            go_rect = go_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
-            self.screen.blit(go_surf, go_rect)
-
-        pygame.display.flip()
-
-    def run(self) -> None:
-        """Main game loop."""
-        while True:
-            self.handle_events()
-            self.update()
-            self.draw()
-            self.clock.tick(TARGET_FPS)
-
-
-if __name__ == "__main__":
-    game = SnakeGame()
-    game.run()
-
+      - name: Commit & Push if Changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add README.md
+          git diff --quiet && echo "📦 No changes to commit" || (
+            git commit -m "docs: update download counter to ${{ steps.get_count.outputs.count }}"
+            git push origin HEAD:${{ github.ref_name }}
+            echo "✅ Successfully pushed updated README.md"
+          )
