@@ -51,5 +51,10 @@ If you put in autostart, try to delay start 5 to 10sec<br>
 <br>
 
 
+📥 **Downloads:** {{DOWNLOAD_COUNT}}
+
+
+<br>
+
 
 <b>=> All at your own risk !!!</b>
