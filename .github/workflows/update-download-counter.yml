@@ -1,0 +1,143 @@
+import pygame
+import random
+import sys
+from typing import List, Tuple
+
+# --- Constants ---
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+GRID_SIZE = 20
+GRID_WIDTH = SCREEN_WIDTH // GRID_SIZE
+GRID_HEIGHT = SCREEN_HEIGHT // GRID_SIZE
+TARGET_FPS = 10
+
+# Colors
+BG_COLOR = (20, 20, 20)
+SNAKE_HEAD = (0, 255, 0)
+SNAKE_BODY = (0, 200, 0)
+FOOD_COLOR = (255, 50, 50)
+TEXT_COLOR = (255, 255, 255)
+
+# Direction vectors
+UP = (0, -1)
+DOWN = (0, 1)
+LEFT = (-1, 0)
+RIGHT = (1, 0)
+
+
+class SnakeGame:
+    """A classic Snake game implementation using Pygame."""
+
+    def __init__(self) -> None:
+        pygame.init()
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption("Snake")
+        self.clock = pygame.time.Clock()
+        self.font = pygame.font.SysFont("arial", 24)
+        self.reset_game()
+
+    def reset_game(self) -> None:
+        """Initialize or reset the game state."""
+        self.snake: List[Tuple[int, int]] = [(GRID_WIDTH // 2, GRID_HEIGHT // 2)]
+        self.direction = RIGHT
+        self.next_direction = RIGHT  # Buffer to prevent rapid 180° turns
+        self.food = self._place_food()
+        self.score = 0
+        self.game_over = False
+
+    def _place_food(self) -> Tuple[int, int]:
+        """Randomly place food, ensuring it doesn't overlap with the snake."""
+        while True:
+            pos = (random.randint(0, GRID_WIDTH - 1), random.randint(0, GRID_HEIGHT - 1))
+            if pos not in self.snake:
+                return pos
+
+    def handle_events(self) -> None:
+        """Process input events and update direction buffer."""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.KEYDOWN:
+                if self.game_over:
+                    if event.key == pygame.K_SPACE:
+                        self.reset_game()
+                else:
+                    if event.key == pygame.K_UP and self.direction != DOWN:
+                        self.next_direction = UP
+                    elif event.key == pygame.K_DOWN and self.direction != UP:
+                        self.next_direction = DOWN
+                    elif event.key == pygame.K_LEFT and self.direction != RIGHT:
+                        self.next_direction = LEFT
+                    elif event.key == pygame.K_RIGHT and self.direction != LEFT:
+                        self.next_direction = RIGHT
+
+    def update(self) -> None:
+        """Update game logic: movement, collisions, and scoring."""
+        if self.game_over:
+            return
+
+        # Apply buffered direction once per frame
+        self.direction = self.next_direction
+
+        head = self.snake[0]
+        new_head = (head[0] + self.direction[0], head[1] + self.direction[1])
+
+        # Wall collision
+        if not (0 <= new_head[0] < GRID_WIDTH and 0 <= new_head[1] < GRID_HEIGHT):
+            self.game_over = True
+            return
+
+        # Self collision
+        if new_head in self.snake:
+            self.game_over = True
+            return
+
+        self.snake.insert(0, new_head)
+
+        # Food collision
+        if new_head == self.food:
+            self.score += 1
+            self.food = self._place_food()
+        else:
+            self.snake.pop()
+
+    def draw(self) -> None:
+        """Render all game elements to the screen."""
+        self.screen.fill(BG_COLOR)
+
+        # Draw snake
+        for i, segment in enumerate(self.snake):
+            color = SNAKE_HEAD if i == 0 else SNAKE_BODY
+            rect = (segment[0] * GRID_SIZE, segment[1] * GRID_SIZE, GRID_SIZE, GRID_SIZE)
+            pygame.draw.rect(self.screen, color, rect)
+
+        # Draw food
+        food_rect = (self.food[0] * GRID_SIZE, self.food[1] * GRID_SIZE, GRID_SIZE, GRID_SIZE)
+        pygame.draw.rect(self.screen, FOOD_COLOR, food_rect)
+
+        # Draw score
+        score_surf = self.font.render(f"Score: {self.score}", True, TEXT_COLOR)
+        self.screen.blit(score_surf, (10, 10))
+
+        # Draw game over screen
+        if self.game_over:
+            go_surf = self.font.render("Game Over! Press SPACE to restart", True, TEXT_COLOR)
+            go_rect = go_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+            self.screen.blit(go_surf, go_rect)
+
+        pygame.display.flip()
+
+    def run(self) -> None:
+        """Main game loop."""
+        while True:
+            self.handle_events()
+            self.update()
+            self.draw()
+            self.clock.tick(TARGET_FPS)
+
+
+if __name__ == "__main__":
+    game = SnakeGame()
+    game.run()
+
