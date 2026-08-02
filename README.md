@@ -51,7 +51,5 @@ If you put in autostart, try to delay start 5 to 10sec<br>
 <br>
 
 
-**Latest release (V1)** – [SmartTaskMonitor_by_Sevenof9_v3_alpha.exe](https://github.com/kalle07/SmartTaskMonitor/releases/download/pre-relase_alpha3/SmartTaskMonitor_by_Sevenof9_v3_alpha.exe)  
-[![GitHub Downloads (latest)](https://img.shields.io/github/downloads/kalle07/SmartTaskMonitor/latest?label=latest%20release%20downloads&color=green)](https://github.com/kalle07/SmartTaskMonitor/releases/latest)
-<br>
+
 <b>=> All at your own risk !!!</b>
