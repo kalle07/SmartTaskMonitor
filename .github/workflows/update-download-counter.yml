@@ -2,62 +2,78 @@ name: Update Download Counter
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # Runs every 6 hours (adjust as needed)
-  workflow_dispatch:       # Allows manual trigger from Actions tab
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-download-counter
+  cancel-in-progress: true
 
 jobs:
   update-counter:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Find Asset ID & Get Download Count
-        id: get_count
+      - name: Get download count
+        id: count
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Dynamically find the asset ID by exact filename across all releases
-          ASSET_ID=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" \
-            | jq -r '.[].assets[] | select(.name == "SmartTaskMonitor_by_Sevenof9_v3_alpha.exe") | .id' | head -n 1)
+          set -euo pipefail
 
-          if [ -z "$ASSET_ID" ]; then
-            echo "::warning::Asset not found. Check filename in README or releases."
-            exit 0
+          ASSET_NAME="SmartTaskMonitor_by_Sevenof9_v3_alpha.exe"
+
+          RELEASE_JSON=$(curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+
+          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name == $name) | .id' | head -n 1)
+
+          if [ -z "${ASSET_ID:-}" ] || [ "$ASSET_ID" = "null" ]; then
+            echo "Asset not found: $ASSET_NAME" >&2
+            exit 1
           fi
 
-          # Fetch download count from GitHub API
-          DOWNLOAD_COUNT=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID" \
+          DOWNLOAD_COUNT=$(curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID" \
             | jq -r '.download_count')
 
-          if [ "$DOWNLOAD_COUNT" == "null" ] || [ -z "$DOWNLOAD_COUNT" ]; then
-            echo "::warning::Download count returned null. GitHub may still be processing."
-            exit 0
+          if [ -z "${DOWNLOAD_COUNT:-}" ] || [ "$DOWNLOAD_COUNT" = "null" ]; then
+            echo "Download count not available" >&2
+            exit 1
           fi
 
-          echo "count=$DOWNLOAD_COUNT" >> $GITHUB_OUTPUT
+          echo "count=$DOWNLOAD_COUNT" >> "$GITHUB_OUTPUT"
 
-      - name: Update README.md
+      - name: Update README
         run: |
-          COUNT="${{ steps.get_count.outputs.count }}"
-          
-          # Check if placeholder exists before replacing
-          if grep -q "{{DOWNLOAD_COUNT}}" README.md; then
-            sed -i "s/{{DOWNLOAD_COUNT}}/$COUNT/g" README.md
-            echo "✅ Updated README.md with count: $COUNT"
-          else
-            echo "⚠️ Placeholder {{DOWNLOAD_COUNT}} not found in README.md. Skipping commit."
-            exit 0
-          fi
+          set -euo pipefail
+          COUNT="${{ steps.count.outputs.count }}"
 
-      - name: Commit & Push if Changed
+          grep -q '{{DOWNLOAD_COUNT}}' README.md
+          sed -i "s/{{DOWNLOAD_COUNT}}/$COUNT/g" README.md
+
+      - name: Commit changes
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
           git add README.md
-          git diff --quiet && echo "📦 No changes to commit" || (
-            git commit -m "docs: update download counter to ${{ steps.get_count.outputs.count }}"
-            git push origin HEAD:${{ github.ref_name }}
-            echo "✅ Successfully pushed updated README.md"
-          )
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "docs: update download counter to ${{ steps.count.outputs.count }}"
+          git push
