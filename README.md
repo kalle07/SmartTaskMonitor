@@ -51,7 +51,7 @@ If you put in autostart, try to delay start 5 to 10sec<br>
 <br>
 
 
-📥 **Downloads:** {{DOWNLOAD_COUNT}}
+📥 Downloads: <!--download-count-->000<!--/download-count-->
 
 
 <br>
