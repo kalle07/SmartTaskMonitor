@@ -17,9 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+        uses: actions/checkout@v5
 
       - name: Get download count
         id: count
@@ -61,7 +59,9 @@ jobs:
           COUNT="${{ steps.count.outputs.count }}"
 
           grep -q '{{DOWNLOAD_COUNT}}' README.md
-          sed -i "s/{{DOWNLOAD_COUNT}}/$COUNT/g" README.md
+          sed -i -E \
+          's/(<!--download-count-->)[0-9]+(<!--\/download-count-->)/\1'"$COUNT"'\2/' \
+          README.md
 
       - name: Commit changes
         run: |
