@@ -56,7 +56,8 @@ jobs:
       - name: Update README
         run: |
           set -euo pipefail
-          COUNT="${{ steps.count.outputs.count }}"
+          RAW_COUNT="${{ steps.count.outputs.count }}"
+          COUNT=$(printf "%03d" "$RAW_COUNT")
       
           sed -i -E \
             's/(<!--download-count-->)[0-9]+(<!--\/download-count-->)/\1'"$COUNT"'\2/' \
