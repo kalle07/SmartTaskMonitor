@@ -57,11 +57,10 @@ jobs:
         run: |
           set -euo pipefail
           COUNT="${{ steps.count.outputs.count }}"
-
-          grep -q '{{DOWNLOAD_COUNT}}' README.md
+      
           sed -i -E \
-          's/(<!--download-count-->)[0-9]+(<!--\/download-count-->)/\1'"$COUNT"'\2/' \
-          README.md
+            's/(<!--download-count-->)[0-9]+(<!--\/download-count-->)/\1'"$COUNT"'\2/' \
+            README.md
 
       - name: Commit changes
         run: |
