@@ -33,7 +33,7 @@ Python (4 files, start main) or exe.
 I use psutil, wmi and pynvml.
 Iam not a coder so its a co-work of Ai and my brain ;)
 
-GPU should be work with multi GPUs if nvidia, AMD has no python lib for windows so need a dll from librehardware. 
+GPU should be work with multi GPUs if nvidia or AMD which uses dll from librehardware. 
 Network should be work with all active network adapters (in tray-icon no name, but with mouse hover over you will see).
 On start you will see a GUI, you have 10 secons to choose hardware.
 <br>
