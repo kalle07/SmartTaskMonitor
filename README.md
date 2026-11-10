@@ -19,7 +19,7 @@ https://huggingface.co/kalle07/SmartTaskMonitor
 -> hover over<br>
 -> right click - Exit or Restart<br><br>
 
-My Icons look like this: (depending on hard drives/partitions, Network, GPU)<br>
+enlarged Icons look like this: (depending on hard drives/partitions, Network, GPU)<br>
 <img width="720" height="224" alt="grafik" src="https://github.com/user-attachments/assets/77123810-4938-452a-a4cf-7a6ba2eabcc2" />
 <br><br>
 At start you can choose:<br>
