@@ -2,7 +2,7 @@ name: Update Download Counter
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: "0 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -15,6 +15,7 @@ concurrency:
 jobs:
   update-counter:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -26,39 +27,32 @@ jobs:
         run: |
           set -euo pipefail
 
-          ASSET_NAME="SmartTaskMonitor_by_Sevenof9_v3_alpha.exe"
-
-          RELEASE_JSON=$(curl -fsSL \
+          RELEASES_JSON=$(curl -fsSL \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+            "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100")
 
-          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name == $name) | .id' | head -n 1)
-
-          if [ -z "${ASSET_ID:-}" ] || [ "$ASSET_ID" = "null" ]; then
-            echo "Asset not found: $ASSET_NAME" >&2
-            exit 1
-          fi
-
-          DOWNLOAD_COUNT=$(curl -fsSL \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID" \
-            | jq -r '.download_count')
-
-          if [ -z "${DOWNLOAD_COUNT:-}" ] || [ "$DOWNLOAD_COUNT" = "null" ]; then
-            echo "Download count not available" >&2
-            exit 1
-          fi
+          DOWNLOAD_COUNT=$(echo "$RELEASES_JSON" | jq -r '
+            [
+              .[]
+              | .assets[]
+              | select(
+                  (.name | ascii_downcase | endswith(".exe"))
+                )
+              | .download_count
+            ]
+            | add // 0
+          ')
 
           echo "count=$DOWNLOAD_COUNT" >> "$GITHUB_OUTPUT"
 
       - name: Update README
         run: |
           set -euo pipefail
+
           RAW_COUNT="${{ steps.count.outputs.count }}"
           COUNT=$(printf "%03d" "$RAW_COUNT")
-      
+
           sed -i -E \
             's/(<!--download-count-->)[0-9]+(<!--\/download-count-->)/\1'"$COUNT"'\2/' \
             README.md
@@ -66,8 +60,10 @@ jobs:
       - name: Commit changes
         run: |
           set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
           git add README.md
 
           if git diff --cached --quiet; then
